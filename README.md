@@ -19,17 +19,13 @@ Flutter ile yazılmış bir Android uygulamasıdır. Tüm veriler yalnızca tele
 - **Açık ve koyu tema:** Telefonun temasına otomatik uyum sağlar.
 - Türkçe arayüz, ₺ ve Türkçe tarih biçimi.
 
-## Kurulum
+## İndir
 
-### APK ile (kullanıcılar için)
+Ay Sonu çok yakında **Google Play Store**'da.
 
-1. Uygulamanın APK dosyasını telefona indir.
-2. Dosyayı aç. Android "bilinmeyen kaynaklardan yükleme" izni isterse ver.
-3. Kurulum bitince **Ay Sonu** uygulamasını aç.
+## Geliştiriciler için
 
-Yeni sürüm aynı şekilde mevcut uygulamanın üzerine kurulur, kayıtların silinmez.
-
-### Kaynak koddan derleme (geliştiriciler için)
+### Kaynak koddan derleme
 
 Gereken: [Flutter](https://docs.flutter.dev/get-started/install) (Dart SDK 3.10 veya üstü) ve Android SDK.
 
@@ -40,13 +36,13 @@ flutter pub get
 flutter run
 ```
 
-Yayın sürümü APK oluşturmak için:
+Play Store'a yüklenecek yayın sürümünü (App Bundle) oluşturmak için:
 
 ```bash
-flutter build apk --release
+flutter build appbundle --release
 ```
 
-Oluşan dosya: `build/app/outputs/flutter-apk/app-release.apk`
+Oluşan dosya: `build/app/outputs/bundle/release/app-release.aab`
 
 > İmza anahtarı (`.jks`) ve `android/key.properties` güvenlik nedeniyle bu depoda yer almaz. Kendi anahtarınla imzalamak için Flutter'ın [Android uygulamasını imzalama](https://docs.flutter.dev/deployment/android#signing-the-app) rehberine bakabilirsin.
 
