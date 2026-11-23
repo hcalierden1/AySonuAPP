@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gelir_gider/data/transaction_store.dart';
@@ -51,6 +53,94 @@ void main() {
     expect(parseAmount('1250.5'), 1250.5);
     expect(parseAmount('12'), 12);
     expect(parseAmount('abc'), isNull);
+  });
+
+  test('parseAmount treats dot groups of three as thousands', () {
+    expect(parseAmount('1.250'), 1250);
+    expect(parseAmount('12.500'), 12500);
+    expect(parseAmount('1.250.000'), 1250000);
+    expect(parseAmount('1.250.000,75'), 1250000.75);
+    expect(parseAmount('1,250'), 1.25);
+    expect(parseAmount('0.500'), 0.5);
+    expect(parseAmount('1250.500'), 1250.5);
+    expect(parseAmount('2.5'), 2.5);
+    expect(parseAmount('250.'), 250);
+    expect(parseAmount('₺ 1.250'), 1250);
+    expect(parseQuickEntry('1.250 kira', TxType.expense)!.amount, 1250);
+  });
+
+  group('damaged stored data', () {
+    Map<String, Object> good(String id) => {
+          'id': id,
+          'type': 'expense',
+          'amount': 100,
+          'category': 'Market',
+          'date': '2026-11-20T10:00:00.000',
+        };
+
+    test('bad records are skipped, kept aside and reported once', () async {
+      SharedPreferences.setMockInitialValues({
+        'transactions_v1': jsonEncode([
+          good('a'),
+          {'id': 'b', 'type': 'expense', 'amount': 'çok', 'category': 'X'},
+          {...good('c'), 'type': 'bilinmeyen'},
+          {...good('d'), 'date': 'dün'},
+          'metin',
+          good('e'),
+        ]),
+        'recurring_v1': '{bozuk json',
+      });
+      final s = TransactionStore();
+      await s.load();
+      expect(s.items.map((t) => t.id), ['a', 'e']);
+      expect(s.rules, isEmpty);
+      expect(s.takeSkipped(), 5);
+      expect(s.takeSkipped(), 0, reason: 'reported only once');
+
+      final prefs = await SharedPreferences.getInstance();
+      final copies = prefs
+          .getKeys()
+          .where((k) => k.startsWith(TransactionStore.corruptPrefix));
+      expect(copies.length, 2);
+      expect(jsonDecode(s.exportJson())['unreadable'], hasLength(2));
+
+      // The cleaned data was written back: reopening finds nothing new.
+      final again = TransactionStore();
+      await again.load();
+      expect(again.takeSkipped(), 0);
+      expect(again.items.length, 2);
+      expect(
+          prefs.getKeys().where(
+              (k) => k.startsWith(TransactionStore.corruptPrefix)),
+          hasLength(2));
+    });
+
+    test('only the latest few damaged copies are kept', () async {
+      SharedPreferences.setMockInitialValues({});
+      for (var i = 0; i < 5; i++) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('transactions_v1', 'bozuk $i');
+        await TransactionStore().load();
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final kept = prefs
+          .getKeys()
+          .where((k) => k.startsWith(TransactionStore.corruptPrefix))
+          .map(prefs.getString)
+          .toSet();
+      expect(kept, {'bozuk 2', 'bozuk 3', 'bozuk 4'});
+    });
+
+    test('invalid backup is rejected without touching data', () async {
+      SharedPreferences.setMockInitialValues({});
+      final s = TransactionStore();
+      await s.load();
+      await s.upsert(Txn.fromJson(good('a')));
+      await expectLater(
+          s.importJson(jsonEncode([{...good('x'), 'amount': -5}])),
+          throwsA(anything));
+      expect(s.items.single.id, 'a');
+    });
   });
 
   group('parseQuickEntry', () {

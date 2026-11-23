@@ -43,7 +43,22 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     // Pick up records added from the notification while we were away.
     _lifecycle = AppLifecycleListener(onResume: store.load);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startTour());
+    store.addListener(_reportSkipped);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reportSkipped(); // the first load happened before this screen existed
+      _startTour();
+    });
+  }
+
+  /// Tells the user once if some stored records were damaged and skipped.
+  void _reportSkipped() {
+    final n = store.takeSkipped();
+    if (n == 0 || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 8),
+      content: Text('$n kayıt okunamadı ve atlandı. Diğer kayıtlarınız '
+          'güvende; bozuk verinin aslı cihazda saklandı ve yedeğe eklenir.'),
+    ));
   }
 
   // ---------- First-launch tour ----------
@@ -150,6 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    store.removeListener(_reportSkipped);
     super.dispose();
   }
 

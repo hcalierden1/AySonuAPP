@@ -83,12 +83,27 @@ class Period {
 
 final money = NumberFormat.currency(locale: 'tr_TR', symbol: '₺');
 
-/// Parses user input like "1.250,50", "1250.5" or "1250".
+/// "1.250", "12.500", "1.250.000": dots used as Turkish thousands separators.
+final _thousandsDots = RegExp(r'^[1-9]\d{0,2}(\.\d{3})+$');
+
+/// Parses user input like "1.250,50", "1.250", "1250.5" or "1250".
+///
+/// With a comma, the comma is the decimal mark and dots are thousands
+/// separators. Without one, dots followed by groups of exactly three digits
+/// ("1.250") are thousands separators, as Turkish users write them; any
+/// other dot ("1250.5", "0.500") is a decimal point.
 double? parseAmount(String input) {
-  var s = input.trim().replaceAll(' ', '').replaceAll('₺', '');
+  var s = input
+      .trim()
+      .replaceAll(' ', '')
+      .replaceAll('₺', '')
+      .replaceAll(RegExp(r'[.,]+$'), ''); // "250." at the end of a sentence
   if (s.isEmpty) return null;
   if (s.contains(',')) {
     s = s.replaceAll('.', '').replaceAll(',', '.');
+  } else if (_thousandsDots.hasMatch(s)) {
+    s = s.replaceAll('.', '');
   }
-  return double.tryParse(s);
+  final v = double.tryParse(s);
+  return v != null && v.isFinite ? v : null;
 }

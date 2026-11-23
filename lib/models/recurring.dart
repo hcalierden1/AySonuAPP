@@ -80,16 +80,28 @@ class RecurringRule {
         if (lastYm != null) 'lastYm': lastYm,
       };
 
-  factory RecurringRule.fromJson(Map<String, dynamic> j) => RecurringRule(
-        id: j['id'] as String,
-        type: TxType.values.byName(j['type'] as String),
-        amount: (j['amount'] as num).toDouble(),
-        category: j['category'] as String,
-        note: (j['note'] as String?) ?? '',
-        day: j['day'] as int,
-        createdAt: DateTime.parse(j['createdAt'] as String),
-        lastYm: j['lastYm'] as int?,
-      );
+  /// Throws (FormatException, TypeError, ArgumentError) if [j] is not a
+  /// valid rule.
+  factory RecurringRule.fromJson(Map<String, dynamic> j) {
+    final id = j['id'] as String;
+    final amount = (j['amount'] as num).toDouble();
+    final day = j['day'] as int;
+    if (id.isEmpty) throw const FormatException('empty id');
+    if (!amount.isFinite || amount < 0) {
+      throw FormatException('invalid amount', amount);
+    }
+    if (day < 1 || day > 31) throw FormatException('invalid day', day);
+    return RecurringRule(
+      id: id,
+      type: TxType.values.byName(j['type'] as String),
+      amount: amount,
+      category: j['category'] as String,
+      note: (j['note'] as String?) ?? '',
+      day: day,
+      createdAt: DateTime.parse(j['createdAt'] as String),
+      lastYm: j['lastYm'] as int?,
+    );
+  }
 }
 
 /// A not-yet-booked occurrence, shown as "planned" in the UI.

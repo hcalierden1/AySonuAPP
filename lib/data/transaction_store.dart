@@ -32,21 +32,99 @@ class TransactionStore extends ChangeNotifier {
     return prefs;
   }
 
-  void _readFrom(SharedPreferences prefs) {
-    _items.clear();
-    final raw = prefs.getString(_key);
-    if (raw != null) {
-      final list = jsonDecode(raw) as List;
-      _items.addAll(list.map((e) => Txn.fromJson(e as Map<String, dynamic>)));
+  // ---------- Reading stored data safely ----------
+
+  /// Prefix of the keys that keep the original text of stored data that
+  /// could not be fully read, so a damaged record is never silently lost.
+  static const corruptPrefix = 'unreadable_';
+
+  /// At most this many damaged copies are kept; the oldest go first.
+  static const _maxCorruptCopies = 3;
+
+  int _skipped = 0;
+
+  /// Number of stored records that could not be read since the last call,
+  /// then resets it. The UI uses this to tell the user once.
+  int takeSkipped() {
+    final n = _skipped;
+    _skipped = 0;
+    return n;
+  }
+
+  /// Decodes a stored JSON list, keeping every entry that is valid and
+  /// counting the ones that are not. A completely unreadable value counts
+  /// as one skipped entry.
+  static ({List<T> ok, int skipped}) _decodeList<T>(
+      String? raw, T Function(Map<String, dynamic>) parse) {
+    if (raw == null) return (ok: <T>[], skipped: 0);
+    Object? data;
+    try {
+      data = jsonDecode(raw);
+    } on FormatException {
+      return (ok: <T>[], skipped: 1);
     }
-    _rules.clear();
-    final rawRules = prefs.getString(_rulesKey);
-    if (rawRules != null) {
-      final list = jsonDecode(rawRules) as List;
-      _rules.addAll(
-          list.map((e) => RecurringRule.fromJson(e as Map<String, dynamic>)));
+    if (data is! List) return (ok: <T>[], skipped: 1);
+    final ok = <T>[];
+    var skipped = 0;
+    for (final e in data) {
+      try {
+        ok.add(parse(e as Map<String, dynamic>));
+      } catch (_) {
+        skipped++;
+      }
+    }
+    return (ok: ok, skipped: skipped);
+  }
+
+  /// Saves the original text of a damaged value under its own key.
+  Future<void> _keepCorrupt(
+      SharedPreferences prefs, String key, String raw) async {
+    var stamp = DateTime.now().microsecondsSinceEpoch;
+    while (prefs.containsKey('$corruptPrefix${key}_$stamp')) {
+      stamp++;
+    }
+    await prefs.setString('$corruptPrefix${key}_$stamp', raw);
+    final copies = _corruptKeys(prefs);
+    final extra = copies.length - _maxCorruptCopies;
+    for (final k in copies.take(extra < 0 ? 0 : extra)) {
+      await prefs.remove(k);
     }
   }
+
+  /// Keys of the kept damaged copies, oldest first.
+  static List<String> _corruptKeys(SharedPreferences prefs) {
+    int stampOf(String key) =>
+        int.tryParse(key.substring(key.lastIndexOf('_') + 1)) ?? 0;
+    return prefs.getKeys().where((k) => k.startsWith(corruptPrefix)).toList()
+      ..sort((a, b) => stampOf(a).compareTo(stampOf(b)));
+  }
+
+  /// Loads everything from [prefs]. Damaged entries are skipped and their
+  /// original text is kept aside. Returns true if anything was skipped, in
+  /// which case the caller must write the cleaned data back.
+  Future<bool> _readFrom(SharedPreferences prefs) async {
+    final raw = prefs.getString(_key);
+    final rawRules = prefs.getString(_rulesKey);
+    final tx = _decodeList(raw, Txn.fromJson);
+    final rules = _decodeList(rawRules, RecurringRule.fromJson);
+    _items
+      ..clear()
+      ..addAll(tx.ok);
+    _rules
+      ..clear()
+      ..addAll(rules.ok);
+    if (tx.skipped > 0) await _keepCorrupt(prefs, _key, raw!);
+    if (rules.skipped > 0) await _keepCorrupt(prefs, _rulesKey, rawRules!);
+    _skipped += tx.skipped + rules.skipped;
+    _unreadable = [
+      for (final k in _corruptKeys(prefs)) prefs.getString(k) ?? '',
+    ];
+    return tx.skipped + rules.skipped > 0;
+  }
+
+  /// Original text of damaged data kept on the device, oldest first. It is
+  /// included in backups so it can still be recovered by hand.
+  List<String> _unreadable = const [];
 
   Future<void> _write(SharedPreferences prefs) async {
     await prefs.setString(
@@ -87,15 +165,17 @@ class TransactionStore extends ChangeNotifier {
 
   Future<void> load() async {
     final prefs = await _freshPrefs();
-    _readFrom(prefs);
+    final repaired = await _readFrom(prefs);
     final booked = _materialize();
     notifyListeners();
-    if (booked) await _write(prefs);
+    // Damaged entries are already kept aside, so the cleaned data can be
+    // written back; otherwise each launch would store another copy.
+    if (booked || repaired) await _write(prefs);
   }
 
   Future<void> _mutate(void Function() change) async {
     final prefs = await _freshPrefs();
-    _readFrom(prefs);
+    await _readFrom(prefs);
     change();
     _materialize();
     notifyListeners();
@@ -176,6 +256,7 @@ class TransactionStore extends ChangeNotifier {
   String exportJson() => const JsonEncoder.withIndent('  ').convert({
         'transactions': _items.map((e) => e.toJson()).toList(),
         'recurring': _rules.map((e) => e.toJson()).toList(),
+        if (_unreadable.isNotEmpty) 'unreadable': _unreadable,
       });
 
   /// Merges a JSON backup (same id overwrites). Accepts both the current

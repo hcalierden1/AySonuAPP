@@ -14,7 +14,12 @@ Future<void> main() async {
   await initializeDateFormatting('tr_TR');
   final store = TransactionStore();
   await store.load();
-  await QuickEntry.init();
+  // A notification problem must never keep the app from opening.
+  try {
+    await QuickEntry.init();
+  } catch (e) {
+    debugPrint('Quick entry notification unavailable: $e');
+  }
   // Keep the notification totals in sync with changes made in the app.
   store.addListener(() => QuickEntry.refresh(store));
   QuickEntry.refresh(store);

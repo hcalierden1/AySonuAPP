@@ -81,11 +81,12 @@ class QuickEntry {
     final expense =
         txns.where((t) => !t.isIncome).fold<double>(0, (s, t) => s + t.amount);
 
-    final title =
+    final balance = store.currentBalance();
+    final title = 'Bakiye: ${money.format(balance)}';
+    final todayLine =
         'Bugün  +${money.format(income)}   −${money.format(expense)}';
-    final body = status ??
-        'Gelir veya gider eklemek için aşağıdaki butona dokunun. '
-            'Örnek: 250 market';
+    final body = '$todayLine\n${status ?? 'Gelir veya gider eklemek için '
+        'aşağıdaki butona dokunun. Örnek: 250 market'}';
 
     const inputHint = 'Tutar ve not · ör. 250 market';
     final details = AndroidNotificationDetails(

@@ -33,13 +33,23 @@ class Txn {
         if (recurringId != null) 'recurringId': recurringId,
       };
 
-  factory Txn.fromJson(Map<String, dynamic> j) => Txn(
-        id: j['id'] as String,
-        type: TxType.values.byName(j['type'] as String),
-        amount: (j['amount'] as num).toDouble(),
-        category: j['category'] as String,
-        note: (j['note'] as String?) ?? '',
-        date: DateTime.parse(j['date'] as String),
-        recurringId: j['recurringId'] as String?,
-      );
+  /// Throws (FormatException, TypeError, ArgumentError) if [j] is not a
+  /// valid record.
+  factory Txn.fromJson(Map<String, dynamic> j) {
+    final id = j['id'] as String;
+    final amount = (j['amount'] as num).toDouble();
+    if (id.isEmpty) throw const FormatException('empty id');
+    if (!amount.isFinite || amount < 0) {
+      throw FormatException('invalid amount', amount);
+    }
+    return Txn(
+      id: id,
+      type: TxType.values.byName(j['type'] as String),
+      amount: amount,
+      category: j['category'] as String,
+      note: (j['note'] as String?) ?? '',
+      date: DateTime.parse(j['date'] as String),
+      recurringId: j['recurringId'] as String?,
+    );
+  }
 }
